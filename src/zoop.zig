@@ -1070,7 +1070,7 @@ fn makeClassVtables(comptime T: type) []const ClassInfo.VtableInfo {
     }
 }
 
-pub fn makeClassInfo(comptime T: type) *const ClassInfo {
+fn makeClassInfo(comptime T: type) *const ClassInfo {
     comptime {
         return &(struct {
             pub const info: ClassInfo = .{
