@@ -390,6 +390,7 @@ pub fn Vtable(comptime I: type) type {
         // for making interface to interface casting faster.
         var nfield: comptime_int = ifaces.items.len - 1;
 
+        @setEvalBranchQuota(20000);
         for (ifaces.items, 0..) |iface, i| {
             vtables[i] = VtableDirect(iface);
             nfield += @typeInfo(vtables[i]).@"struct".fields.len;
@@ -461,6 +462,7 @@ pub fn tupleAppend(comptime tuple: Tuple, comptime any: anytype) Tuple {
 pub fn tupleAppendUnique(comptime tuple: Tuple, comptime any: anytype) Tuple {
     comptime {
         var ret = tuple;
+        @setEvalBranchQuota(30000);
         for (tupleInit(any).items) |item| {
             if (!tupleHas(ret, item)) {
                 ret = tupleAppend(ret, item);
@@ -1324,6 +1326,7 @@ fn classes(comptime T: type) Tuple {
 inline fn isExclude(comptime I: type, comptime method: []const u8) bool {
     return comptime blk: {
         if (@hasDecl(I, "excludes")) {
+            @setEvalBranchQuota(20000);
             for (@field(I, "excludes")) |name| {
                 if (std.mem.eql(u8, method, name)) break :blk true;
             }
