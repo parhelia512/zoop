@@ -1,6 +1,6 @@
 const std = @import("std");
 const zoop = @import("zoop.zig");
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}).init;
 var allocator = gpa.allocator();
 var p: ?*Sub = null;
 var i: ?IHuman = null;
@@ -9,10 +9,8 @@ fn assert(b: bool) void {
 }
 
 pub fn main() !void {
-    if (zoop.interfaceIndex(IAge, zoop.IObject) == comptime zoop.interfaceIndex(IHuman, zoop.IObject)) {
-        std.debug.print("aaaaabbbbbccccc", .{});
-    }
-    if (false) {
+    assert(zoop.interfaceIndex(IAge, zoop.IObject) == comptime zoop.interfaceIndex(IHuman, zoop.IObject));
+    if (true) {
         const s = try zoop.new(allocator, Sub, null);
         p = s;
         i = zoop.cast(s, IHuman);
@@ -63,9 +61,9 @@ pub fn main() !void {
         assert(hinfo == cinfo);
         assert(sinfo == cinfo);
         assert(ssinfo == cinfo);
-        assert(hinfo.getVtableOf(Custom, zoop.IFormat) == sinfo.getVtableOf(Human, zoop.IFormat));
-        assert(hinfo.getVtableOf(Custom, zoop.IFormat) == sinfo.getVtableOf(Sub, zoop.IFormat));
-        assert(hinfo.getVtableOf(Custom, zoop.IFormat) == sinfo.getVtableOf(SubSub, zoop.IFormat));
+        assert(hinfo.getVtableOf(Custom, zoop.IObject) == sinfo.getVtableOf(Human, zoop.IObject));
+        assert(hinfo.getVtableOf(Custom, zoop.IObject) == sinfo.getVtableOf(Sub, zoop.IObject));
+        assert(hinfo.getVtableOf(Custom, zoop.IObject) == sinfo.getVtableOf(SubSub, zoop.IObject));
         assert(hinfo.getVtableOf(Custom, IAge) == sinfo.getVtableOf(Human, IAge));
         assert(hinfo.getVtableOf(Custom, IAge) == sinfo.getVtableOf(Sub, IAge));
         assert(hinfo.getVtableOf(Custom, IAge) == sinfo.getVtableOf(SubSub, IAge));
@@ -79,8 +77,8 @@ pub fn main() !void {
     }
 }
 
-fn zoopicall() @TypeOf(zoop.icall(i.?, "getName", .{})) {
-    return zoop.icall(i.?, "getName", .{});
+fn zoopicall() @TypeOf(zoop.icall(i.?, .getName, .{})) {
+    return zoop.icall(i.?, .getName, .{});
 }
 fn zoopasclass() @TypeOf(zoop.as(p.?, Human)) {
     return zoop.as(p.?, Human);
@@ -389,7 +387,7 @@ test "zoop" {
         ihuman = zoop.cast(psubsub, IHuman);
         const cpsubsub: *const SubSub = psubsub;
         const cpsub = zoop.cast(cpsubsub, Sub);
-        try t.expect(@typeInfo(@TypeOf(cpsub)).Pointer.is_const);
+        try t.expect(@typeInfo(@TypeOf(cpsub)).pointer.is_const);
         const ksubsub = zoop.Klass(SubSub).from(psubsub);
         try t.expect(@intFromPtr(ihuman.ptr) == @intFromPtr(ksubsub));
         try t.expectEqualStrings(ihuman.getName(), "default");
@@ -421,7 +419,7 @@ test "zoop" {
         const pccustom = &ccustom.class;
         var pfield8 = zoop.getField(pccustom, "age", u8);
         pfield8 = pfield8;
-        try t.expect(@typeInfo(@TypeOf(pfield8)).Pointer.is_const);
+        try t.expect(@typeInfo(@TypeOf(pfield8)).pointer.is_const);
         try t.expect(pfield8.* == 99);
         const pfield16 = zoop.getField(pccustom, "age", u16);
         try t.expect(pfield16.* == 9999);

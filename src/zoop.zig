@@ -132,12 +132,12 @@ pub fn getMethod(comptime T: type, comptime name: []const u8) MethodType(T, name
                 while (Cur != void and isClassType(Cur)) {
                     if (@hasDecl(Cur, name)) {
                         const FT = @TypeOf(@field(Cur, name));
-                        if (@typeInfo(FT) == .Fn) {
+                        if (@typeInfo(FT) == .@"fn") {
                             break :blk @field(Cur, name);
                         }
                     }
-                    const fields = @typeInfo(Cur).Struct.fields;
-                    if (fields.len > 0 and @typeInfo(fields[0].type) == .Struct) {
+                    const fields = @typeInfo(Cur).@"struct".fields;
+                    if (fields.len > 0 and @typeInfo(fields[0].type) == .@"struct") {
                         Cur = fields[0].type;
                     } else {
                         Cur = void;
@@ -156,8 +156,8 @@ pub fn getUpMethod(comptime T: type, comptime name: []const u8) UpMethodType(T, 
 
         const Class = if (isKlassType(T)) T.Class else T;
         const Super = blk: {
-            const fields = @typeInfo(Class).Struct.fields;
-            if (fields.len > 0 and @typeInfo(fields[0].type) == .Struct and isClassType(fields[0].type)) {
+            const fields = @typeInfo(Class).@"struct".fields;
+            if (fields.len > 0 and @typeInfo(fields[0].type) == .@"struct" and isClassType(fields[0].type)) {
                 break :blk fields[0].type;
             } else {
                 break :blk void;
@@ -172,9 +172,15 @@ pub const KlassHeader = if (builtin.mode == .Debug) packed struct {
     magic: u32 = kmagic,
     info: *const ClassInfo,
     allocator: *const fn (*anyopaque) ?std.mem.Allocator,
+    fn init(_info: *const ClassInfo, _allocator: *const fn (*anyopaque) ?std.mem.Allocator) @This() {
+        return .{ .info = _info, .allocator = _allocator, .magic = kmagic };
+    }
 } else packed struct {
     info: *const ClassInfo,
     allocator: *const fn (*anyopaque) ?std.mem.Allocator,
+    fn init(_info: *const ClassInfo, _allocator: *const fn (*anyopaque) ?std.mem.Allocator) @This() {
+        return .{ .info = _info, .allocator = _allocator };
+    }
 };
 
 pub fn Klass(comptime T: type) type {
@@ -194,7 +200,7 @@ pub fn Klass(comptime T: type) type {
 
             pub fn new(allocator: std.mem.Allocator, init: ?T) !*@This() {
                 var self = try allocator.create(@This());
-                self.header = .{ .info = comptime makeClassInfo(T), .allocator = @ptrCast(&getAlly) };
+                self.header = .init(comptime makeClassInfo(T), @ptrCast(&getAlly));
                 self.allocator = allocator;
                 if (init) |v| {
                     self.class = v;
@@ -209,7 +215,7 @@ pub fn Klass(comptime T: type) type {
 
             pub fn make(init: ?T) @This() {
                 var self: @This() = undefined;
-                self.header = .{ .info = comptime makeClassInfo(T), .allocator = @ptrCast(&getAlly) };
+                self.header = .init(comptime makeClassInfo(T), @ptrCast(&getAlly));
                 self.allocator = null;
                 if (init) |v| {
                     self.class = v;
@@ -269,12 +275,12 @@ pub fn ApiEnum(comptime I: type) type {
         var idx = 0;
         for (std.meta.declarations(I)) |decl| {
             const info = @typeInfo(@TypeOf(@field(I, decl.name)));
-            if (info == .Fn and info.Fn.params.len > 0 and !info.Fn.is_generic) {
-                const first = info.Fn.params[0].type orelse unreachable;
+            if (info == .@"fn" and info.@"fn".params.len > 0 and !info.@"fn".is_generic) {
+                const first = info.@"fn".params[0].type orelse unreachable;
                 const Self = switch (@typeInfo(first)) {
                     else => void,
-                    .Struct => first,
-                    .Pointer => std.meta.Child(first),
+                    .@"struct" => first,
+                    .pointer => std.meta.Child(first),
                 };
                 if (Self == I) {
                     if (!hasDecl(apis[0..idx], decl)) {
@@ -287,7 +293,7 @@ pub fn ApiEnum(comptime I: type) type {
 
         if (idx == 0) {
             return @Type(.{
-                .Enum = .{
+                .@"enum" = .{
                     .tag_type = u0,
                     .fields = &.{},
                     .decls = &.{},
@@ -304,7 +310,7 @@ pub fn ApiEnum(comptime I: type) type {
             };
         }
         return @Type(.{
-            .Enum = .{
+            .@"enum" = .{
                 .tag_type = std.math.IntFittingRange(0, fields.len - 1),
                 .fields = &fields,
                 .decls = &.{},
@@ -331,12 +337,12 @@ pub fn MethodEnum(comptime T: type) type {
         for (supers.items) |super| {
             for (std.meta.declarations(super)) |decl| {
                 const info = @typeInfo(@TypeOf(@field(super, decl.name)));
-                if (info == .Fn and info.Fn.params.len > 0 and !info.Fn.is_generic) {
-                    const first = info.Fn.params[0].type.?;
+                if (info == .@"fn" and info.@"fn".params.len > 0 and !info.@"fn".is_generic) {
+                    const first = info.@"fn".params[0].type.?;
                     const Self = switch (@typeInfo(first)) {
                         else => void,
-                        .Struct => first,
-                        .Pointer => std.meta.Child(first),
+                        .@"struct" => first,
+                        .pointer => std.meta.Child(first),
                     };
                     if (Self == super and !hasDecl(methods[0..idx], decl)) {
                         methods[idx] = decl;
@@ -348,7 +354,7 @@ pub fn MethodEnum(comptime T: type) type {
 
         if (idx == 0) {
             return @Type(.{
-                .Enum = .{
+                .@"enum" = .{
                     .tag_type = u0,
                     .fields = &.{},
                     .decls = &.{},
@@ -365,7 +371,7 @@ pub fn MethodEnum(comptime T: type) type {
             };
         }
         return @Type(.{
-            .Enum = .{
+            .@"enum" = .{
                 .tag_type = std.math.IntFittingRange(0, fields.len - 1),
                 .fields = &fields,
                 .decls = &.{},
@@ -386,7 +392,7 @@ pub fn Vtable(comptime I: type) type {
 
         for (ifaces.items, 0..) |iface, i| {
             vtables[i] = VtableDirect(iface);
-            nfield += @typeInfo(vtables[i]).Struct.fields.len;
+            nfield += @typeInfo(vtables[i]).@"struct".fields.len;
         }
 
         var allfields: [nfield]StructField = undefined;
@@ -395,7 +401,7 @@ pub fn Vtable(comptime I: type) type {
             if (iface != I) {
                 allfields[idx] = StructField{
                     .alignment = @alignOf(*Vtable(iface)),
-                    .default_value = null,
+                    .default_value_ptr = null,
                     .is_comptime = false,
                     .name = @typeName(iface),
                     .type = *Vtable(iface),
@@ -404,14 +410,15 @@ pub fn Vtable(comptime I: type) type {
             }
         }
         for (vtables) |vt| {
-            const fields = @typeInfo(vt).Struct.fields;
+            const fields = @typeInfo(vt).@"struct".fields;
+            @setEvalBranchQuota(10000);
             for (fields) |field| {
                 allfields[idx] = field;
                 idx += 1;
             }
         }
         return @Type(.{
-            .Struct = .{
+            .@"struct" = .{
                 .layout = .auto,
                 .decls = &.{},
                 .is_tuple = false,
@@ -488,7 +495,7 @@ pub fn typeInfo(any: anytype) *const TypeInfo {
 pub fn classInfo(any: anytype) *const ClassInfo {
     return switch (@typeInfo(@TypeOf(any))) {
         else => ClassInfoGetter(@TypeOf(any)).get(any),
-        .Type => comptime makeClassInfo(any),
+        .type => comptime makeClassInfo(any),
     };
 }
 
@@ -516,10 +523,10 @@ pub fn destroy(any: anytype) void {
     } else {
         switch (comptime @typeInfo(T)) {
             else => {},
-            .Pointer => |p| {
+            .pointer => |p| {
                 switch (p.size) {
                     else => {},
-                    .One => {
+                    .one => {
                         if (comptime isKlassType(p.child)) {
                             return any.header.info.deinit(@ptrCast(any));
                         } else if (comptime isClassType(p.child)) {
@@ -557,8 +564,8 @@ pub fn vcall(any: anytype, comptime method: anytype, args: anytype) ApiInfo(meth
         var pass = false;
         switch (@typeInfo(@TypeOf(any))) {
             else => {},
-            .Struct => pass = isInterfaceType(@TypeOf(any)),
-            .Pointer => |p| {
+            .@"struct" => pass = isInterfaceType(@TypeOf(any)),
+            .pointer => |p| {
                 pass = isKlassType(p.child) or isClassType(p.child);
             },
         }
@@ -581,12 +588,12 @@ pub fn upcall(any: anytype, comptime method_enum: MethodEnum(std.meta.Child(@Typ
     const T = @TypeOf(any);
     switch (@typeInfo(T)) {
         else => {},
-        .Pointer => |p| {
+        .pointer => |p| {
             if (isKlassType(p.child) or isClassType(p.child)) {
                 const Class = if (isKlassType(p.child)) p.child.Class else p.child;
                 const MT = UpMethodType(Class, @tagName(method_enum));
                 if (MT != void) {
-                    break :t @typeInfo(MT).Fn.return_type orelse void;
+                    break :t @typeInfo(MT).@"fn".return_type orelse void;
                 } else {
                     @compileError(compfmt("no method named '{s}' founded in inherit tree of {s}.", .{ @tagName(method_enum), @typeName(Class) }));
                 }
@@ -598,7 +605,7 @@ pub fn upcall(any: anytype, comptime method_enum: MethodEnum(std.meta.Child(@Typ
     const T = comptime std.meta.Child(@TypeOf(any));
     const Class = comptime if (isKlassType(T)) T.Class else T;
     const method = comptime getUpMethod(Class, @tagName(method_enum));
-    const Ptr = comptime @typeInfo(@TypeOf(method)).Fn.params[0].type.?;
+    const Ptr = comptime @typeInfo(@TypeOf(method)).@"fn".params[0].type.?;
     const ptr: Ptr = @ptrCast(if (comptime isKlassType(T)) &any.class else any);
     return @call(.auto, method, .{ptr} ++ args);
 }
@@ -617,14 +624,14 @@ pub fn getAllocator(any: anytype) ?std.mem.Allocator {
     const T = comptime @TypeOf(any);
     switch (comptime @typeInfo(T)) {
         else => {},
-        .Struct => {
+        .@"struct" => {
             if (comptime isInterfaceType(T)) {
                 const pklass: *Klass(struct { x: u8 align(alignment) }) = @ptrFromInt(@intFromPtr(any.ptr));
                 return pklass.header.allocator(any.ptr);
             }
         },
-        .Pointer => |p| {
-            if (comptime p.size == .One) {
+        .pointer => |p| {
+            if (comptime p.size == .one) {
                 if (comptime isKlassType(p.child)) {
                     return any.allocator;
                 } else if (comptime isClassType(p.child)) {
@@ -685,12 +692,12 @@ pub fn as(any: anytype, comptime T: type) t: {
 pub fn asptr(any: anytype) *anyopaque {
     switch (comptime @typeInfo(@TypeOf(any))) {
         else => {},
-        .Struct => {
+        .@"struct" => {
             if (comptime isInterfaceType(@TypeOf(any))) {
                 return any.ptr;
             }
         },
-        .Pointer => |p| {
+        .pointer => |p| {
             if (comptime isKlassType(p.child)) return @ptrCast(any);
             if (comptime isClassType(p.child)) return @ptrCast(Klass(p.child).from(any));
         },
@@ -729,7 +736,7 @@ inline fn isMethod(comptime T: type, comptime name: []const u8) bool {
             const FT = @TypeOf(@field(T, name));
             switch (@typeInfo(FT)) {
                 else => {},
-                .Fn => |f| {
+                .@"fn" => |f| {
                     if (f.params.len > 0) {
                         return RealType(f.params[0].type.?) == T;
                     }
@@ -744,7 +751,7 @@ fn RealType(comptime T: type) type {
     comptime {
         return switch (@typeInfo(T)) {
             else => T,
-            .Pointer => std.meta.Child(T),
+            .pointer => std.meta.Child(T),
         };
     }
 }
@@ -792,7 +799,7 @@ fn MethodType(comptime T: type, comptime name: []const u8) type {
         while (Cur != void) {
             if (isMethod(Cur, name)) return @TypeOf(@field(Cur, name));
 
-            const fields = @typeInfo(Cur).Struct.fields;
+            const fields = @typeInfo(Cur).@"struct".fields;
             if (fields.len > 0 and isClassType(RealType(fields[0].type))) {
                 Cur = fields[0].type;
             } else {
@@ -807,8 +814,8 @@ fn UpMethodType(comptime T: type, comptime name: []const u8) type {
     comptime {
         const Class = if (isKlassType(T)) T.Class else T;
         const Super = blk: {
-            const fields = @typeInfo(Class).Struct.fields;
-            if (fields.len > 0 and @typeInfo(fields[0].type) == .Struct and isClassType(fields[0].type)) {
+            const fields = @typeInfo(Class).@"struct".fields;
+            if (fields.len > 0 and @typeInfo(fields[0].type) == .@"struct" and isClassType(fields[0].type)) {
                 break :blk fields[0].type;
             } else {
                 break :blk void;
@@ -821,18 +828,18 @@ fn UpMethodType(comptime T: type, comptime name: []const u8) type {
 fn ReturnType(comptime I: type, comptime method: ApiEnum(I)) type {
     comptime {
         if (!isInterfaceType(I)) @compileError(compfmt("{s} is not an interface type.", .{@typeName(I)}));
-        return @typeInfo(@TypeOf(@field(I, @tagName(method)))).Fn.return_type orelse void;
+        return @typeInfo(@TypeOf(@field(I, @tagName(method)))).@"fn".return_type orelse void;
     }
 }
 
 fn ApiInfo(comptime method: anytype) type {
     comptime {
         const info = @typeInfo(@TypeOf(method));
-        if (info != .Fn) @compileError("method is not a .Fn");
-        if (info.Fn.params.len == 0 or !isInterfaceType(info.Fn.params[0].type.?))
-            @compileError(compfmt("{s} is not an interface type.", .{@typeName(info.Fn.params[0].type.?)}));
+        if (info != .@"fn") @compileError("method is not a .fn");
+        if (info.@"fn".params.len == 0 or !isInterfaceType(info.@"fn".params[0].type.?))
+            @compileError(compfmt("{s} is not an interface type.", .{@typeName(info.@"fn".params[0].type.?)}));
 
-        const I = info.Fn.params[0].type orelse unreachable;
+        const I = info.@"fn".params[0].type orelse unreachable;
         const method_name = blk: {
             for (std.meta.declarations(I)) |decl| {
                 if (@TypeOf(@field(I, decl.name)) == @TypeOf(method)) {
@@ -844,7 +851,7 @@ fn ApiInfo(comptime method: anytype) type {
         };
         return struct {
             pub const Iface = I;
-            pub const Return = @typeInfo(@TypeOf(method)).Fn.return_type orelse void;
+            pub const Return = @typeInfo(@TypeOf(method)).@"fn".return_type orelse void;
             pub const name = nameCast(ApiEnum(I), method_name);
         };
     }
@@ -867,7 +874,7 @@ fn Caster(comptime V: type, comptime T: type) type {
             }
         } else switch (@typeInfo(V)) {
             else => {},
-            .Pointer => |p| {
+            .pointer => |p| {
                 if (isClassType(p.child)) {
                     if (isInterfaceType(T)) {
                         if (tupleHas(interfaces(p.child), T)) {
@@ -875,7 +882,9 @@ fn Caster(comptime V: type, comptime T: type) type {
                             return struct {
                                 pub fn cast(any: anytype, comptime I: type) I {
                                     const pklass = Klass(p.child).from(any);
-                                    return I{ .ptr = @ptrCast(pklass), .vptr = pklass.header.info.getVtableOf(p.child, I) };
+                                    const header = pklass.header;
+                                    const info = header.info;
+                                    return I{ .ptr = @ptrCast(pklass), .vptr = info.getVtableOf(p.child, I) };
                                 }
                             };
                         }
@@ -922,7 +931,7 @@ fn ClassInfoGetter(comptime T: type) type {
     comptime {
         switch (@typeInfo(T)) {
             else => {},
-            .Type => {
+            .type => {
                 if (isKlassType(T)) {
                     return struct {
                         pub fn get(_: anytype) *const ClassInfo {
@@ -938,7 +947,7 @@ fn ClassInfoGetter(comptime T: type) type {
                     };
                 }
             },
-            .Pointer => |p| {
+            .pointer => |p| {
                 if (isKlassType(p.child)) {
                     return struct {
                         pub fn get(klass: anytype) *const ClassInfo {
@@ -954,7 +963,7 @@ fn ClassInfoGetter(comptime T: type) type {
                     };
                 }
             },
-            .Struct => {
+            .@"struct" => {
                 if (isInterfaceType(T)) {
                     return struct {
                         pub fn get(iface: anytype) *const ClassInfo {
@@ -975,7 +984,7 @@ fn defaultFields(comptime T: type) []StructField {
         var fields: [allfields.len]StructField = undefined;
         var idx = 0;
         for (allfields) |field| {
-            if (field.default_value != null) {
+            if (field.default_value_ptr != null) {
                 fields[idx] = field;
                 idx += 1;
             }
@@ -988,7 +997,7 @@ fn defaultFields(comptime T: type) []StructField {
 fn initDefaultFields(pclass: anytype) void {
     const T = comptime std.meta.Child(@TypeOf(pclass));
     inline for (comptime defaultFields(T)) |field| {
-        const ptr: *const field.type = @ptrCast(@alignCast(field.default_value.?));
+        const ptr: *const field.type = @ptrCast(@alignCast(field.default_value_ptr.?));
         @field(pclass, field.name) = ptr.*;
     }
 }
@@ -1059,7 +1068,7 @@ fn makeClassVtables(comptime T: type) []const ClassInfo.VtableInfo {
     }
 }
 
-fn makeClassInfo(comptime T: type) *const ClassInfo {
+pub fn makeClassInfo(comptime T: type) *const ClassInfo {
     comptime {
         return &(struct {
             pub const info: ClassInfo = .{
@@ -1086,6 +1095,7 @@ fn makeTypeInfo(comptime T: type) *const TypeInfo {
 
 fn makeTypeId(comptime T: type) type_id {
     comptime {
+        // return @intCast(@intFromError(@field(anyerror, "#" ++ @typeName(T))));
         return (struct {
             pub const name = @typeName(T);
         }).name.ptr;
@@ -1133,13 +1143,13 @@ fn checkInterface(comptime I: type) void {
             const field = @field(I, "Default");
             switch (@typeInfo(@TypeOf(field))) {
                 else => @compileError("{s}.Default must be: fn (comptime T:type) type"),
-                .Fn => |info| {
+                .@"fn" => |info| {
                     if (!info.is_generic or info.return_type != type)
                         @compileError("{s}.Default must be: fn (comptime T:type) type");
                 },
             }
             const methods = I.Default(struct {});
-            if (@typeInfo(methods) != .Struct) {
+            if (@typeInfo(methods) != .@"struct") {
                 @compileError(compfmt("{s}.Default() must return a struct but:{}", .{ @typeName(I), methods }));
             }
             for (std.meta.declarations(methods)) |decl| {
@@ -1148,10 +1158,10 @@ fn checkInterface(comptime I: type) void {
                 const definfo = @typeInfo(@TypeOf(@field(methods, decl.name)));
                 const info = @typeInfo(@TypeOf(@field(I, decl.name)));
                 var fail = false;
-                if (definfo == .Fn and info == .Fn) {
-                    if (definfo.Fn.params.len == info.Fn.params.len and definfo.Fn.params.len > 0) {
-                        for (1..definfo.Fn.params.len) |i| {
-                            if (definfo.Fn.params[i].type != info.Fn.params[i].type) {
+                if (definfo == .@"fn" and info == .@"fn") {
+                    if (definfo.@"fn".params.len == info.@"fn".params.len and definfo.@"fn".params.len > 0) {
+                        for (1..definfo.@"fn".params.len) |i| {
+                            if (definfo.@"fn".params[i].type != info.@"fn".params[i].type) {
                                 fail = true;
                                 break;
                             }
@@ -1171,12 +1181,12 @@ fn checkApi(comptime T: type, comptime I: type, comptime field: []const u8) void
     comptime {
         @setEvalBranchQuota(5000);
         const VT = Vtable(I);
-        const vtinfo = @typeInfo(@typeInfo(FieldType(VT, std.enums.nameCast(FieldEnum(VT), field))).Pointer.child);
+        const vtinfo = @typeInfo(@typeInfo(FieldType(VT, std.enums.nameCast(FieldEnum(VT), field))).pointer.child);
         const tinfo = @typeInfo(MethodType(T, field));
-        if (vtinfo.Fn.return_type.? != tinfo.Fn.return_type.?) @compileError(compfmt("'{s}.{s}' must return '{}' as same as '{s}.{s}'.", .{ @typeName(T), field, vtinfo.Fn.return_type.?, @typeName(I), field }));
-        if (vtinfo.Fn.params.len != tinfo.Fn.params.len) @compileError(compfmt("parameters number of '{s}.{s}' must as same as '{s}.{s}'.", .{ @typeName(T), field, @typeName(I), field }));
-        if (vtinfo.Fn.params.len < 2) return;
-        for (vtinfo.Fn.params[1..], tinfo.Fn.params[1..], 1..) |vt, t, i| {
+        if (vtinfo.@"fn".return_type.? != tinfo.@"fn".return_type.?) @compileError(compfmt("'{s}.{s}' must return '{}' as same as '{s}.{s}'.", .{ @typeName(T), field, vtinfo.@"fn".return_type.?, @typeName(I), field }));
+        if (vtinfo.@"fn".params.len != tinfo.@"fn".params.len) @compileError(compfmt("parameters number of '{s}.{s}' must as same as '{s}.{s}'.", .{ @typeName(T), field, @typeName(I), field }));
+        if (vtinfo.@"fn".params.len < 2) return;
+        for (vtinfo.@"fn".params[1..], tinfo.@"fn".params[1..], 1..) |vt, t, i| {
             const idx = i;
             if (vt.type.? != t.type.?) {
                 @compileError(compfmt("The {d}th parameter of {s}.{s} must be '{}'.", .{ idx + 1, @typeName(T), field, vt.type.? }));
@@ -1186,11 +1196,12 @@ fn checkApi(comptime T: type, comptime I: type, comptime field: []const u8) void
 }
 
 pub inline fn isInterfaceType(comptime T: type) bool {
-    const fields = comptime @typeInfo(IObject).Struct.fields;
+    const fields = comptime @typeInfo(IObject).@"struct".fields;
     return comptime blk: {
+        @setEvalBranchQuota(8000);
         switch (@typeInfo(T)) {
             else => break :blk false,
-            .Struct => |s| break :blk s.fields.len == fields.len and
+            .@"struct" => |s| break :blk s.fields.len == fields.len and
                 s.fields[0].type == fields[0].type and
                 s.fields[1].type == fields[1].type and
                 std.mem.eql(u8, s.fields[0].name, fields[0].name) and
@@ -1205,14 +1216,14 @@ pub inline fn isClassType(comptime T: type) bool {
         if (isInterfaceType(T)) break :blk false;
         break :blk switch (@typeInfo(T)) {
             else => false,
-            .Struct => |s| !s.is_tuple and s.fields.len > 0 and s.fields[0].alignment == alignment,
+            .@"struct" => |s| !s.is_tuple and s.fields.len > 0 and s.fields[0].alignment == alignment,
         };
     };
 }
 
 pub inline fn isKlassType(comptime T: type) bool {
     return comptime blk: {
-        if (@typeInfo(T) == .Struct) {
+        if (@typeInfo(T) == .@"struct") {
             break :blk @hasDecl(T, "#klass");
         } else break :blk false;
     };
@@ -1220,11 +1231,11 @@ pub inline fn isKlassType(comptime T: type) bool {
 
 pub inline fn isTuple(any: anytype) bool {
     return comptime blk: {
-        if (@TypeOf(any) == type and @typeInfo(any) == .Struct) {
+        if (@TypeOf(any) == type and @typeInfo(any) == .@"struct") {
             if (!@hasDecl(any, "items")) break :blk false;
             const T = @TypeOf(@field(any, "items"));
             break :blk switch (@typeInfo(T)) {
-                .Struct => |s| s.is_tuple,
+                .@"struct" => |s| s.is_tuple,
                 else => false,
             };
         } else {
@@ -1252,7 +1263,7 @@ fn interfaces(comptime T: type) Tuple {
                 const extends = @field(T, "extends");
                 switch (@typeInfo(@TypeOf(extends))) {
                     else => {},
-                    .Struct => |s| {
+                    .@"struct" => |s| {
                         if (s.is_tuple) {
                             for (extends) |iface| {
                                 if (isInterfaceType(iface)) {
@@ -1273,7 +1284,7 @@ fn interfaces(comptime T: type) Tuple {
                 const extends = @field(T, "extends");
                 switch (@typeInfo(@TypeOf(extends))) {
                     else => {},
-                    .Struct => |s| {
+                    .@"struct" => |s| {
                         if (s.is_tuple) {
                             for (extends) |iface| {
                                 if (isInterfaceType(iface)) {
@@ -1326,15 +1337,16 @@ fn VtableDirect(comptime I: type) type {
         const decls = std.meta.declarations(I);
         var fields: [decls.len]StructField = undefined;
         var idx = 0;
+        @setEvalBranchQuota(7000);
         for (decls) |decl| {
             if (!isExclude(I, decl.name)) {
                 const info = @typeInfo(@TypeOf(@field(I, decl.name)));
                 switch (info) {
-                    .Fn => |f| {
+                    .@"fn" => |f| {
                         if (!f.is_generic and f.params.len > 0 and f.params[0].type == I) {
                             fields[idx] = StructField{
                                 .alignment = @alignOf(VtableFieldType(f)),
-                                .default_value = null,
+                                .default_value_ptr = null,
                                 .is_comptime = false,
                                 .name = decl.name,
                                 .type = VtableFieldType(f),
@@ -1347,7 +1359,7 @@ fn VtableDirect(comptime I: type) type {
             }
         }
         return @Type(.{
-            .Struct = .{
+            .@"struct" = .{
                 .layout = .auto,
                 .decls = &.{},
                 .is_tuple = false,
@@ -1368,7 +1380,7 @@ fn VtableFieldType(comptime F: std.builtin.Type.Fn) type {
         for (1..F.params.len) |i| {
             params[i] = F.params[i];
         }
-        return *const @Type(.{ .Fn = .{
+        return *const @Type(.{ .@"fn" = .{
             .params = params[0..],
             .return_type = F.return_type,
             .is_var_args = F.is_var_args,
@@ -1401,15 +1413,19 @@ fn pointerType(any: anytype) enum {
     return comptime blk: {
         const T = switch (@typeInfo(@TypeOf(any))) {
             else => @TypeOf(any),
-            .Type => any,
+            .type => any,
         };
         break :blk switch (@typeInfo(T)) {
             else => .none,
-            .Pointer => |p| if (p.is_const) .read else .write,
+            .pointer => |p| if (p.is_const) .read else .write,
         };
     };
 }
 
 inline fn canCast(comptime V: type, comptime T: type) bool {
     return comptime Caster(V, T) != void;
+}
+
+test {
+    _ = @import("test.zig");
 }
