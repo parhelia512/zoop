@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const StructField = std.builtin.Type.StructField;
-const FieldType = std.meta.FieldType;
 const FieldEnum = std.meta.FieldEnum;
 const Tuple = type;
 const nameCast = std.enums.nameCast;
@@ -63,7 +62,7 @@ pub const Nil = struct {
     }
 
     pub fn of(comptime I: type) I {
-        return .{ .ptr = @ptrCast(ptr()), .vptr = @alignCast(@ptrCast(ptr())) };
+        return .{ .ptr = @ptrCast(ptr()), .vptr = @ptrCast(@alignCast(ptr())) };
     }
 };
 
@@ -1019,7 +1018,7 @@ fn fieldOffset(comptime T: type, comptime name: []const u8, comptime FT: type) u
         var owners = tupleInit(.{});
         for (supers.items) |V| {
             if (@hasField(V, name)) {
-                if (FieldType(V, nameCast(FieldEnum(V), name)) == FT) {
+                if (@FieldType(V, name) == FT) {
                     owners = tupleAppend(owners, V);
                 }
             }
@@ -1183,7 +1182,7 @@ fn checkApi(comptime T: type, comptime I: type, comptime field: []const u8) void
     comptime {
         @setEvalBranchQuota(5000);
         const VT = Vtable(I);
-        const vtinfo = @typeInfo(@typeInfo(FieldType(VT, std.enums.nameCast(FieldEnum(VT), field))).pointer.child);
+        const vtinfo = @typeInfo(@typeInfo(@FieldType(VT, field)).pointer.child);
         const tinfo = @typeInfo(MethodType(T, field));
         if (vtinfo.@"fn".return_type.? != tinfo.@"fn".return_type.?) @compileError(compfmt("'{s}.{s}' must return '{}' as same as '{s}.{s}'.", .{ @typeName(T), field, vtinfo.@"fn".return_type.?, @typeName(I), field }));
         if (vtinfo.@"fn".params.len != tinfo.@"fn".params.len) @compileError(compfmt("parameters number of '{s}.{s}' must as same as '{s}.{s}'.", .{ @typeName(T), field, @typeName(I), field }));
