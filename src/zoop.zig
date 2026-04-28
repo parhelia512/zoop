@@ -3,7 +3,11 @@ const builtin = @import("builtin");
 const StructField = std.builtin.Type.StructField;
 const FieldEnum = std.meta.FieldEnum;
 const Tuple = type;
-const nameCast = std.enums.nameCast;
+const nameCast = struct {
+    pub fn cast(comptime E: type, name: []const u8) E {
+        return @field(E, name);
+    }
+}.cast;
 const compfmt = std.fmt.comptimePrint;
 const assert = std.debug.assert;
 const zoop = @This();
@@ -70,17 +74,17 @@ pub const IObject = struct {
     ptr: *anyopaque,
     vptr: *anyopaque,
 
-    pub fn formatAny(self: IObject, writer: std.io.AnyWriter) anyerror!void {
+    pub fn formatAny(self: IObject, writer: anytype) anyerror!void {
         try icall(self, .formatAny, .{writer});
     }
 
-    pub fn format(self: *const IObject, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try (self.*).formatAny(if (@TypeOf(writer) == std.io.AnyWriter) writer else writer.any());
+    pub fn format(self: *const IObject, comptime _: []const u8, _: std.fmt.Options, writer: anytype) !void {
+        try (self.*).formatAny(writer);
     }
 
     pub fn Default(comptime Class: type) type {
         return struct {
-            pub fn formatAny(self: *Class, writer: std.io.AnyWriter) anyerror!void {
+            pub fn formatAny(self: *Class, writer: anytype) anyerror!void {
                 try writer.print("{}", .{self});
             }
         };
@@ -169,16 +173,28 @@ pub fn getUpMethod(comptime T: type, comptime name: []const u8) UpMethodType(T, 
 pub const KlassHeader = if (builtin.mode == .Debug) packed struct {
     const kmagic: u32 = 0xaabbccdd;
     magic: u32 = kmagic,
-    info: *const ClassInfo,
-    allocator: *const fn (*anyopaque) ?std.mem.Allocator,
+    info_addr: usize,
+    allocator_addr: usize,
     fn init(_info: *const ClassInfo, _allocator: *const fn (*anyopaque) ?std.mem.Allocator) @This() {
-        return .{ .info = _info, .allocator = _allocator, .magic = kmagic };
+        return .{ .info_addr = @intFromPtr(_info), .allocator_addr = @intFromPtr(_allocator), .magic = kmagic };
+    }
+    fn getInfo(self: *const @This()) *const ClassInfo {
+        return @ptrFromInt(self.info_addr);
+    }
+    fn getAllocator(self: *const @This()) *const fn (*anyopaque) ?std.mem.Allocator {
+        return @ptrFromInt(self.allocator_addr);
     }
 } else packed struct {
-    info: *const ClassInfo,
-    allocator: *const fn (*anyopaque) ?std.mem.Allocator,
+    info_addr: usize,
+    allocator_addr: usize,
     fn init(_info: *const ClassInfo, _allocator: *const fn (*anyopaque) ?std.mem.Allocator) @This() {
-        return .{ .info = _info, .allocator = _allocator };
+        return .{ .info_addr = @intFromPtr(_info), .allocator_addr = @intFromPtr(_allocator) };
+    }
+    fn getInfo(self: *const @This()) *const ClassInfo {
+        return @ptrFromInt(self.info_addr);
+    }
+    fn getAllocator(self: *const @This()) *const fn (*anyopaque) ?std.mem.Allocator {
+        return @ptrFromInt(self.allocator_addr);
     }
 };
 
@@ -242,7 +258,7 @@ pub fn Klass(comptime T: type) type {
             pub fn deinit(self: *@This()) void {
                 if (comptime builtin.mode == .Debug) {
                     assert(self.header.magic == KlassHeader.kmagic);
-                    assert(self.header.info == comptime makeClassInfo(T));
+                    assert(self.header.getInfo() == comptime makeClassInfo(T));
                 }
                 if (destroy_hook_func) |func| {
                     func(cast(&self.class, IObject));
@@ -291,31 +307,16 @@ pub fn ApiEnum(comptime I: type) type {
         }
 
         if (idx == 0) {
-            return @Type(.{
-                .@"enum" = .{
-                    .tag_type = u0,
-                    .fields = &.{},
-                    .decls = &.{},
-                    .is_exhaustive = true,
-                },
-            });
+            return @Enum(u0, .exhaustive, &.{}, &.{});
         }
 
-        var fields: [idx]std.builtin.Type.EnumField = undefined;
+        var field_names: [idx][]const u8 = undefined;
+        var field_values: [idx]std.math.IntFittingRange(0, idx - 1) = undefined;
         for (0..idx) |i| {
-            fields[i] = .{
-                .name = apis[i].name,
-                .value = i,
-            };
+            field_names[i] = apis[i].name;
+            field_values[i] = @intCast(i);
         }
-        return @Type(.{
-            .@"enum" = .{
-                .tag_type = std.math.IntFittingRange(0, fields.len - 1),
-                .fields = &fields,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        });
+        return @Enum(std.math.IntFittingRange(0, idx - 1), .exhaustive, &field_names, &field_values);
     }
 }
 
@@ -352,31 +353,16 @@ pub fn MethodEnum(comptime T: type) type {
         }
 
         if (idx == 0) {
-            return @Type(.{
-                .@"enum" = .{
-                    .tag_type = u0,
-                    .fields = &.{},
-                    .decls = &.{},
-                    .is_exhaustive = true,
-                },
-            });
+            return @Enum(u0, .exhaustive, &.{}, &.{});
         }
 
-        var fields: [idx]std.builtin.Type.EnumField = undefined;
+        var field_names: [idx][]const u8 = undefined;
+        var field_values: [idx]std.math.IntFittingRange(0, idx - 1) = undefined;
         for (0..idx) |i| {
-            fields[i] = .{
-                .name = methods[i].name,
-                .value = i,
-            };
+            field_names[i] = methods[i].name;
+            field_values[i] = @intCast(i);
         }
-        return @Type(.{
-            .@"enum" = .{
-                .tag_type = std.math.IntFittingRange(0, fields.len - 1),
-                .fields = &fields,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        });
+        return @Enum(std.math.IntFittingRange(0, idx - 1), .exhaustive, &field_names, &field_values);
     }
 }
 
@@ -417,18 +403,24 @@ pub fn Vtable(comptime I: type) type {
                 idx += 1;
             }
         }
-        return @Type(.{
-            .@"struct" = .{
-                .layout = .auto,
-                .decls = &.{},
-                .is_tuple = false,
-                .fields = allfields[0..idx],
-            },
-        });
+        const field_count = idx;
+        var names: [field_count][]const u8 = undefined;
+        var types: [field_count]type = undefined;
+        var attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
+        for (0..field_count) |i| {
+            names[i] = allfields[i].name;
+            types[i] = allfields[i].type;
+            attrs[i] = .{
+                .@"align" = allfields[i].alignment,
+                .@"comptime" = allfields[i].is_comptime,
+                .default_value_ptr = allfields[i].default_value_ptr,
+            };
+        }
+        return @Struct(.auto, null, &names, &types, &attrs);
     }
 }
 
-pub fn tupleInit(comptime any: anytype) Tuple {
+pub fn tupleInit(comptime any: anytype) type {
     comptime {
         if (isTuple(any)) return any;
 
@@ -520,7 +512,7 @@ pub fn destroy(any: anytype) void {
     const T = comptime @TypeOf(any);
     if (comptime isInterfaceType(T)) {
         var header: *KlassHeader = @ptrCast(@alignCast(any.ptr));
-        return header.info.deinit(@ptrCast(header));
+        return header.getInfo().deinit(@ptrCast(header));
     } else {
         switch (comptime @typeInfo(T)) {
             else => {},
@@ -529,10 +521,10 @@ pub fn destroy(any: anytype) void {
                     else => {},
                     .one => {
                         if (comptime isKlassType(p.child)) {
-                            return any.header.info.deinit(@ptrCast(any));
+                            return any.header.getInfo().deinit(@ptrCast(any));
                         } else if (comptime isClassType(p.child)) {
                             var klass = Klass(p.child).from(any);
-                            return klass.header.info.deinit(@ptrCast(klass));
+                            return klass.header.getInfo().deinit(@ptrCast(klass));
                         }
                     },
                 }
@@ -554,7 +546,7 @@ pub fn icall(iface: anytype, comptime api_enum: ApiEnum(@TypeOf(iface)), args: a
     }
     const pklass: *Klass(struct { x: u8 align(alignment) }) = @ptrFromInt(@intFromPtr(iface.ptr));
     const vptr: *const Vtable(@TypeOf(iface)) = @ptrFromInt(@intFromPtr(iface.vptr));
-    const ptr: *anyopaque = @ptrFromInt(@intFromPtr(pklass) + pklass.header.info.offset);
+    const ptr: *anyopaque = @ptrFromInt(@intFromPtr(pklass) + pklass.header.getInfo().offset);
     return @call(.auto, @field(vptr, @tagName(api_enum)), .{ptr} ++ args);
 }
 
@@ -628,7 +620,7 @@ pub fn getAllocator(any: anytype) ?std.mem.Allocator {
         .@"struct" => {
             if (comptime isInterfaceType(T)) {
                 const pklass: *Klass(struct { x: u8 align(alignment) }) = @ptrFromInt(@intFromPtr(any.ptr));
-                return pklass.header.allocator(any.ptr);
+                return pklass.header.getAllocator()(any.ptr);
             }
         },
         .pointer => |p| {
@@ -637,7 +629,7 @@ pub fn getAllocator(any: anytype) ?std.mem.Allocator {
                     return any.allocator;
                 } else if (comptime isClassType(p.child)) {
                     const pklass = Klass(p.child).from(any);
-                    return pklass.header.allocator(@ptrFromInt(@intFromPtr(pklass)));
+                    return pklass.header.getAllocator()(@ptrFromInt(@intFromPtr(pklass)));
                 }
             }
         },
@@ -884,7 +876,7 @@ fn Caster(comptime V: type, comptime T: type) type {
                                 pub fn cast(any: anytype, comptime I: type) I {
                                     const pklass = Klass(p.child).from(any);
                                     const header = pklass.header;
-                                    const info = header.info;
+                                    const info = header.getInfo();
                                     return I{ .ptr = @ptrCast(pklass), .vptr = info.getVtableOf(p.child, I) };
                                 }
                             };
@@ -952,14 +944,14 @@ fn ClassInfoGetter(comptime T: type) type {
                 if (isKlassType(p.child)) {
                     return struct {
                         pub fn get(klass: anytype) *const ClassInfo {
-                            return klass.header.info;
+                            return klass.header.getInfo();
                         }
                     };
                 }
                 if (isClassType(p.child)) {
                     return struct {
                         pub fn get(class: anytype) *const ClassInfo {
-                            return Klass(p.child).from(class).header.info;
+                            return Klass(p.child).from(class).header.getInfo();
                         }
                     };
                 }
@@ -969,7 +961,7 @@ fn ClassInfoGetter(comptime T: type) type {
                     return struct {
                         pub fn get(iface: anytype) *const ClassInfo {
                             const pklass: *Klass(struct { x: u8 align(alignment) }) = @ptrFromInt(@intFromPtr(iface.ptr));
-                            return pklass.header.info;
+                            return pklass.header.getInfo();
                         }
                     };
                 }
@@ -1360,35 +1352,46 @@ fn VtableDirect(comptime I: type) type {
                 }
             }
         }
-        return @Type(.{
-            .@"struct" = .{
-                .layout = .auto,
-                .decls = &.{},
-                .is_tuple = false,
-                .fields = fields[0..idx],
-            },
-        });
+        const field_count = idx;
+        var names: [field_count][]const u8 = undefined;
+        var types: [field_count]type = undefined;
+        var attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
+        for (0..field_count) |i| {
+            names[i] = fields[i].name;
+            types[i] = fields[i].type;
+            attrs[i] = .{
+                .@"align" = fields[i].alignment,
+                .@"comptime" = fields[i].is_comptime,
+                .default_value_ptr = fields[i].default_value_ptr,
+            };
+        }
+        return @Struct(.auto, null, &names, &types, &attrs);
     }
 }
 
 fn VtableFieldType(comptime F: std.builtin.Type.Fn) type {
     comptime {
-        var params: [F.params.len]std.builtin.Type.Fn.Param = undefined;
-        params[0] = .{
-            .is_generic = F.params[0].is_generic,
-            .is_noalias = F.params[0].is_noalias,
-            .type = *anyopaque,
+        var param_types: [F.params.len]type = undefined;
+        var param_attrs: [F.params.len]std.builtin.Type.Fn.Param.Attributes = undefined;
+        param_types[0] = *anyopaque;
+        param_attrs[0] = .{
+            .@"noalias" = F.params[0].is_noalias,
         };
         for (1..F.params.len) |i| {
-            params[i] = F.params[i];
+            param_types[i] = F.params[i].type orelse anyopaque;
+            param_attrs[i] = .{
+                .@"noalias" = F.params[i].is_noalias,
+            };
         }
-        return *const @Type(.{ .@"fn" = .{
-            .params = params[0..],
-            .return_type = F.return_type,
-            .is_var_args = F.is_var_args,
-            .is_generic = F.is_generic,
-            .calling_convention = F.calling_convention,
-        } });
+        return *const @Fn(
+            &param_types,
+            &param_attrs,
+            F.return_type orelse void,
+            .{
+                .@"callconv" = F.calling_convention,
+                .varargs = F.is_var_args,
+            },
+        );
     }
 }
 

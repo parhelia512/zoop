@@ -173,7 +173,7 @@ pub const Human = struct {
         return self.age;
     }
 
-    pub fn formatAny(self: Self, writer: std.io.AnyWriter) anyerror!void {
+    pub fn formatAny(self: Self, writer: anytype) anyerror!void {
         const classinfo = zoop.classInfo(self);
         try writer.print("{s}{{.age = {}, .name='{s}'}}\n", .{ classinfo.typeinfo.typename, self.age, self.name });
     }
